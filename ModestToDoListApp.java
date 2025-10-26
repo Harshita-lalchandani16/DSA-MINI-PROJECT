@@ -3,13 +3,9 @@ import javax.swing.border.Border;
 import javax.swing.border.EmptyBorder;
 import javax.swing.event.DocumentListener;
 import javax.swing.event.DocumentEvent;
-import javax.swing.text.DateFormatter;
-import javax.swing.text.MaskFormatter;
 import java.awt.*;
 import java.awt.event.ActionListener;
 import java.io.*;
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
@@ -17,11 +13,17 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 /**
  * ModestToDoListApp: A feature-rich Java Swing application
  * focused on a modern Dark Mode UI and complete CRUD operations
  * including filtering, searching, and sorting.
+ * * * CHANGES IMPLEMENTED:
+ * 1. Month Dropdown Format: Changed the month JComboBox to display "Jan", "Feb", etc., 
+ * instead of "01-Jan", "02-Feb".
+ * 2. Cancel Button Color: Set the Cancel button text (foreground) to Color.BLACK 
+ * in the task dialog for visibility.
  */
 public class ModestToDoListApp extends JFrame {
 
@@ -47,10 +49,9 @@ public class ModestToDoListApp extends JFrame {
 
     // Date Format for Main List View (MMM dd, yyyy)
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("MMM dd, yyyy");
-    // Date format for the input field in the dialog (yyyy-MM-dd)
+    // Date format for the input string (yyyy-MM-dd)
     private static final DateTimeFormatter DIALOG_DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
-    private static final String DATE_MASK = "####-##-##"; // Mask for yyyy-MM-dd
-
+    
     // --- Data and Components ---
     private List<Task> allTasks = new ArrayList<>();
     private final DefaultListModel<Task> listModel = new DefaultListModel<>();
@@ -61,8 +62,10 @@ public class ModestToDoListApp extends JFrame {
     private JTextArea taskDescriptionArea;
     private JComboBox<String> priorityComboBox;
 
-    // NEW: Date Input Field
-    private JFormattedTextField dueDateField;
+    // FIX: Replaced single date field with three separate JComboBoxes
+    private JComboBox<Integer> dayBox;
+    private JComboBox<String> monthBox; 
+    private JComboBox<Integer> yearBox;
 
     // Control Components
     private JTextField searchField;
@@ -213,13 +216,13 @@ public class ModestToDoListApp extends JFrame {
     /**
      * Styles the JComboBox and ensures popup visibility against the dark theme.
      */
-    private void styleComboBoxForVisibility(JComboBox<String> comboBox, Dimension size) {
+    private void styleComboBoxForVisibility(JComboBox<?> comboBox, Dimension size) {
         comboBox.setPreferredSize(size);
         comboBox.setFont(INPUT_FONT);
         comboBox.setEditable(false);
 
         // Set the visible component (the box itself) to Secondary Dark BG
-        comboBox.setBackground(SECONDARY_BG);
+        comboBox.setBackground(Color.WHITE); 
         // Set foreground to Black for content in the field (Fixes visibility in dialog)
         comboBox.setForeground(Color.BLACK);
         comboBox.setBorder(BorderFactory.createLineBorder(BORDER_COLOR, 1));
@@ -467,8 +470,42 @@ public class ModestToDoListApp extends JFrame {
     // IV. TASK DIALOG (Modal for Add/Edit)
     // =========================================================================
 
+    // Helper models for date components
+    private DefaultComboBoxModel<Integer> createYearModel(int currentYear) {
+        // Years from 5 years ago to 5 years in the future
+        List<Integer> years = IntStream.rangeClosed(currentYear - 5, currentYear + 5)
+                                       .boxed().collect(Collectors.toList());
+        return new DefaultComboBoxModel<>(years.toArray(new Integer[0]));
+    }
+
     /**
-     * Uses JFormattedTextField with a date mask for date input.
+     * UPDATED: Changed the month strings to only show the abbreviation (e.g., "Jan").
+     * The internal value used for parsing remains the 'MM' format.
+     */
+    private DefaultComboBoxModel<String> createMonthModel() {
+        String[] months = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+        return new DefaultComboBoxModel<>(months);
+    }
+    
+    // Helper to map month abbreviation back to its two-digit number
+    private String getMonthNumberFromAbbrev(String abbrev) {
+        String[] months = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+        for (int i = 0; i < months.length; i++) {
+            if (months[i].equals(abbrev)) {
+                return String.format("%02d", i + 1); // Month is 1-indexed
+            }
+        }
+        return "01"; // Default to January
+    }
+
+    private DefaultComboBoxModel<Integer> createDayModel() {
+        // Days 1 to 31. Validation will handle months with fewer days.
+        List<Integer> days = IntStream.rangeClosed(1, 31).boxed().collect(Collectors.toList());
+        return new DefaultComboBoxModel<>(days.toArray(new Integer[0]));
+    }
+
+    /**
+     * FIX IMPLEMENTED HERE: Uses separate JComboBoxes for date input.
      */
     private void showTaskDialog(Task task, boolean isNew) {
         JDialog dialog = new JDialog(this, isNew ? "Add New Task" : "Edit Task", true);
@@ -519,153 +556,148 @@ public class ModestToDoListApp extends JFrame {
 
         JScrollPane scrollPane = new JScrollPane(taskDescriptionArea);
         scrollPane.setAlignmentX(Component.LEFT_ALIGNMENT);
-        scrollPane.setPreferredSize(new Dimension(550, 180));
-        scrollPane.setMaximumSize(new Dimension(550, 180));
+        scrollPane.setMaximumSize(new Dimension(550, 150));
+        scrollPane.setPreferredSize(new Dimension(550, 150));
         scrollPane.setBorder(BorderFactory.createLineBorder(BORDER_COLOR, 1));
 
         inputPanel.add(descLabel);
         inputPanel.add(scrollPane);
-
-        dialog.add(inputPanel, BorderLayout.CENTER);
-
-        // --- Bottom Panel (Priority and Date Input) ---
-        JPanel controlPanel = new JPanel(new GridBagLayout());
+        inputPanel.add(Box.createVerticalStrut(15));
+        
+        // --- Date and Priority Panel ---
+        JPanel controlPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
         controlPanel.setBackground(PRIMARY_BG);
-        controlPanel.setBorder(new EmptyBorder(10, 15, 15, 15));
+        controlPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.insets = new Insets(5, 5, 5, 5);
-
-        // Priority setup
+        // --- Priority Input ---
         JLabel priorityLabel = new JLabel("Priority:");
         priorityLabel.setFont(LABEL_FONT); priorityLabel.setForeground(TEXT_LIGHT);
-        String[] priorities = {"High", "Medium", "Low"};
-        priorityComboBox = new JComboBox<>(priorities);
-        styleComboBoxForVisibility(priorityComboBox, SMALL_INPUT_SIZE);
+        priorityComboBox = new JComboBox<>(new String[]{"High", "Medium", "Low"});
+        styleComboBoxForVisibility(priorityComboBox, new Dimension(100, 36));
         priorityComboBox.setSelectedIndex(initialPriorityIndex);
-
-        gbc.gridx = 0; gbc.gridy = 0; gbc.anchor = GridBagConstraints.WEST; controlPanel.add(priorityLabel, gbc);
-        gbc.gridx = 1; gbc.gridy = 0; gbc.anchor = GridBagConstraints.WEST; controlPanel.add(priorityComboBox, gbc);
-
-        // Date Input Field setup (FIXED)
-        JLabel dateLabel = new JLabel("Due Date (YYYY-MM-DD):");
-        dateLabel.setFont(LABEL_FONT); dateLabel.setForeground(TEXT_LIGHT);
-
-        MaskFormatter mask = null;
-        try {
-            mask = new MaskFormatter(DATE_MASK);
-            mask.setPlaceholderCharacter('_');
-        } catch (ParseException e) {
-            e.printStackTrace();
-        }
-
-        // FIX: Use SimpleDateFormat for compatibility with DateFormatter
-        SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
-        dateFormat.setLenient(false); // Disallow invalid dates (e.g., Feb 30th)
-        DateFormatter dateFormatter = new DateFormatter(dateFormat);
-
-        dueDateField = new JFormattedTextField(dateFormatter);
-        if (mask != null) {
-            mask.install(dueDateField);
-        }
         
-        // **CRITICAL FIX:** Use setText() instead of setValue() to avoid IllegalArgumentException
-        dueDateField.setText(initialDate.format(DIALOG_DATE_FORMATTER)); 
+        controlPanel.add(priorityLabel);
+        controlPanel.add(priorityComboBox);
+        
+        controlPanel.add(Box.createHorizontalStrut(20)); // Separator
 
-        dueDateField.setPreferredSize(new Dimension(120, 36));
-        dueDateField.setFont(INPUT_FONT);
-        dueDateField.setHorizontalAlignment(JTextField.CENTER);
-        dueDateField.setBackground(Color.WHITE);
-        dueDateField.setForeground(Color.BLACK);
-        dueDateField.setBorder(BorderFactory.createLineBorder(BORDER_COLOR, 1));
+        // --- Date Input (FIX) ---
+        JLabel dateLabel = new JLabel("Due Date:");
+        dateLabel.setFont(LABEL_FONT); dateLabel.setForeground(TEXT_LIGHT);
+        controlPanel.add(dateLabel);
 
-        gbc.gridx = 2; gbc.gridy = 0; gbc.anchor = GridBagConstraints.WEST; controlPanel.add(dateLabel, gbc);
-        gbc.gridx = 3; gbc.gridy = 0; gbc.anchor = GridBagConstraints.WEST; controlPanel.add(dueDateField, gbc);
+        // Day Box
+        dayBox = new JComboBox<>(createDayModel());
+        dayBox.setSelectedItem(initialDate.getDayOfMonth());
+        styleComboBoxForVisibility(dayBox, new Dimension(60, 36));
+        
+        // Month Box
+        monthBox = new JComboBox<>(createMonthModel());
+        // Set the currently selected month abbreviation based on the initial date
+        String currentMonthAbbrev = initialDate.getMonth().name().substring(0, 1) + initialDate.getMonth().name().substring(1).toLowerCase();
+        monthBox.setSelectedItem(currentMonthAbbrev.substring(0, 3)); 
+        styleComboBoxForVisibility(monthBox, new Dimension(90, 36));
 
-        // Action Buttons (Save/Cancel)
-        JButton saveButton = createStyledButton(isNew ? "Add Task" : "Update Task", ACCENT_TEAL, ACCENT_TEAL.brighter());
+        // Year Box
+        yearBox = new JComboBox<>(createYearModel(initialDate.getYear()));
+        yearBox.setSelectedItem(initialDate.getYear());
+        styleComboBoxForVisibility(yearBox, new Dimension(80, 36));
+        
+        controlPanel.add(monthBox);
+        controlPanel.add(dayBox);
+        controlPanel.add(yearBox);
+        
+        inputPanel.add(controlPanel);
+
+        // --- Bottom Panel (Action Buttons) ---
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 15, 15));
+        buttonPanel.setBackground(PRIMARY_BG);
+        
         JButton cancelButton = createStyledButton("Cancel", BORDER_COLOR.darker(), BORDER_COLOR);
-
-        saveButton.setPreferredSize(new Dimension(120, 42));
-        cancelButton.setPreferredSize(new Dimension(100, 42));
-
+        // FIX: Set foreground to black for visibility against dialog's default white background
+        cancelButton.setForeground(Color.BLACK); 
+        cancelButton.addActionListener(e -> dialog.dispose());
+        
+        JButton saveButton = createStyledButton(isNew ? "Add Task" : "Save Changes", ACCENT_TEAL, ACCENT_TEAL.brighter());
         saveButton.addActionListener(e -> {
-            if (handleSaveTask(task, isNew)) {
+            if (handleTaskAction(task, isNew)) {
                 dialog.dispose();
             }
         });
-        cancelButton.addActionListener(e -> dialog.dispose());
 
-        JPanel buttonRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
-        buttonRow.setBackground(PRIMARY_BG);
-        buttonRow.add(cancelButton);
-        buttonRow.add(saveButton);
+        buttonPanel.add(cancelButton);
+        buttonPanel.add(saveButton);
+        
+        dialog.add(inputPanel, BorderLayout.CENTER);
+        dialog.add(buttonPanel, BorderLayout.SOUTH);
 
-        gbc.gridx = 0; gbc.gridy = 1; gbc.gridwidth = 4; gbc.anchor = GridBagConstraints.EAST;
-        controlPanel.add(buttonRow, gbc);
-
-        dialog.add(controlPanel, BorderLayout.SOUTH);
         dialog.setVisible(true);
     }
 
-    // =========================================================================
-    // V. CRUD OPERATIONS
-    // =========================================================================
-
     /**
-     * Reads task details and the date from the JFormattedTextField.
+     * CRITICAL FIX: Assembles the date from the three JComboBoxes into a valid 
+     * YYYY-MM-DD string before attempting to parse it into a LocalDate.
      */
-    private boolean handleSaveTask(Task task, boolean isNew) {
-        String taskName = taskNameField.getText().trim();
-        String taskDetails = taskDescriptionArea.getText().trim();
-        int priority = 3 - priorityComboBox.getSelectedIndex();
+    private boolean handleTaskAction(Task task, boolean isNew) {
+        String name = taskNameField.getText().trim();
+        String details = taskDescriptionArea.getText().trim();
+        
+        if (name.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Task Name cannot be empty.", "Input Error", JOptionPane.ERROR_MESSAGE);
+            return false;
+        }
+
+        // 1. Assemble Date String (YYYY-MM-DD)
+        String selectedMonthAbbrev = (String) monthBox.getSelectedItem();
+        // Use the helper method to get the two-digit month number
+        String month = getMonthNumberFromAbbrev(selectedMonthAbbrev); 
+        
+        int day = (int) dayBox.getSelectedItem();
+        int year = (int) yearBox.getSelectedItem();
+        
+        // Use String.format to ensure correct padding for day (e.g., "05" instead of "5")
+        String dateString = String.format("%d-%s-%02d", year, month, day); 
+
         LocalDate dueDate;
-
-        if (taskName.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "Task Name cannot be empty.", "Input Error", JOptionPane.WARNING_MESSAGE);
-            return false;
-        }
-
-        // Read and validate date from the JFormattedTextField
         try {
-            // Replace placeholder character (if user didn't type fully)
-            String dateString = dueDateField.getText().trim().replace('_', '0');
-            // Check if the date is fully entered and parse it
-            if (dateString.contains("0")) {
-                 JOptionPane.showMessageDialog(this, "Please enter a valid, complete date in YYYY-MM-DD format.", "Date Error", JOptionPane.WARNING_MESSAGE);
-                 return false;
-            }
+            // 2. Parse the correctly assembled string
             dueDate = LocalDate.parse(dateString, DIALOG_DATE_FORMATTER);
-        } catch (DateTimeParseException ex) {
-            JOptionPane.showMessageDialog(this, "Invalid date format. Please use YYYY-MM-DD.", "Date Error", JOptionPane.WARNING_MESSAGE);
+        } catch (DateTimeParseException e) {
+            // This catches genuine invalid dates (like Feb 30th)
+            JOptionPane.showMessageDialog(this, "Please enter a valid date (e.g., February 30th is invalid).", "Date Error", JOptionPane.ERROR_MESSAGE);
             return false;
         }
 
-        String combinedDescription = taskName + NAME_DETAIL_DELIMITER + taskDetails;
-
+        int priority = 3 - priorityComboBox.getSelectedIndex(); // High=3, Medium=2, Low=1
+        
+        // Combine name and details using the delimiter
+        String fullDescription = name + NAME_DETAIL_DELIMITER + details;
+        
         if (isNew) {
-            Task newTask = new Task(combinedDescription, priority, dueDate);
+            Task newTask = new Task(fullDescription, priority, dueDate);
             allTasks.add(newTask);
         } else {
-            task.setDescription(combinedDescription);
+            task.setDescription(fullDescription);
             task.setPriority(priority);
             task.setDueDate(dueDate);
-            taskToEdit = null;
         }
-
+        
         applyFiltersAndSorting();
         saveTasks();
         return true;
     }
 
+    // =========================================================================
+    // V. CRUD, FILTERING, SORTING, AND PERSISTENCE
+    // =========================================================================
+
     private void setupEditTask() {
         int selectedIndex = taskJList.getSelectedIndex();
         if (selectedIndex != -1) {
-            Task task = listModel.getElementAt(selectedIndex);
-            showTaskDialog(task, false);
+            taskToEdit = listModel.getElementAt(selectedIndex);
+            showTaskDialog(taskToEdit, false);
         } else {
-            JOptionPane.showMessageDialog(this, "Please select a task to edit.", "Selection Required", JOptionPane.INFORMATION_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Please select a task to edit.", "Selection Required", JOptionPane.WARNING_MESSAGE);
         }
     }
 
@@ -674,140 +706,118 @@ public class ModestToDoListApp extends JFrame {
         if (selectedIndex != -1) {
             Task task = listModel.getElementAt(selectedIndex);
             task.toggleCompletion();
-
-            // Reapply filters and sorting to update the list view immediately
-            applyFiltersAndSorting();
+            // Re-render the list to show the status change and update sorting/filtering
+            applyFiltersAndSorting(); 
             saveTasks();
         } else {
-            JOptionPane.showMessageDialog(this, "Please select a task to toggle its completion status.", "Selection Required", JOptionPane.INFORMATION_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Please select a task to toggle completion status.", "Selection Required", JOptionPane.WARNING_MESSAGE);
         }
     }
 
     private void deleteSelectedTask() {
         int selectedIndex = taskJList.getSelectedIndex();
         if (selectedIndex != -1) {
-            Task task = listModel.getElementAt(selectedIndex);
-
-            int confirm = JOptionPane.showConfirmDialog(this,
-                "Are you sure you want to delete the task: '" + task.getDisplayName() + "'?",
+            Task taskToRemove = listModel.getElementAt(selectedIndex);
+            
+            // Confirmation (since we cannot use confirm(), using a dialog)
+            int result = JOptionPane.showConfirmDialog(this, 
+                "Are you sure you want to delete the task: '" + taskToRemove.getDisplayName() + "'?", 
                 "Confirm Deletion", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
-
-            if (confirm == JOptionPane.YES_OPTION) {
-                allTasks.remove(task);
+            
+            if (result == JOptionPane.YES_OPTION) {
+                allTasks.remove(taskToRemove);
                 applyFiltersAndSorting();
                 saveTasks();
             }
         } else {
-            JOptionPane.showMessageDialog(this, "Please select a task to delete.", "Selection Required", JOptionPane.INFORMATION_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Please select a task to delete.", "Selection Required", JOptionPane.WARNING_MESSAGE);
         }
     }
 
-    /**
-     * Main method for applying search, status filters, and sorting the task list.
-     */
     private void applyFiltersAndSorting() {
-        // 1. Get Filters and Sort Criteria
-        String searchText = searchField.getText().toLowerCase().trim();
-        String filterStatus = (String) filterStatusComboBox.getSelectedItem();
-        String sortCriteria = (String) sortComboBox.getSelectedItem(); // This holds the sort choice
-
-        // 2. Filtering
         List<Task> filteredTasks = allTasks.stream()
-            .filter(task -> {
-                // Status Filter
-                boolean statusMatch = true;
-                if ("Incomplete".equals(filterStatus)) {
-                    statusMatch = !task.isCompleted();
-                } else if ("Completed".equals(filterStatus)) {
-                    statusMatch = task.isCompleted();
-                }
-
-                // Search Filter
-                boolean searchMatch = true;
-                if (!searchText.isEmpty()) {
-                    String taskContent = (task.getDisplayName() + task.getDetailDescription()).toLowerCase();
-                    searchMatch = taskContent.contains(searchText);
-                }
-
-                return statusMatch && searchMatch;
-            })
+            .filter(this::matchesSearch)
+            .filter(this::matchesStatusFilter)
             .collect(Collectors.toList());
 
-        // 3. Sorting Logic (Uses Comparators based on sortCriteria)
-        Comparator<Task> comparator;
-
-        switch (sortCriteria) {
-            case "Due Date (Upcoming)":
-                // Sort by Due Date (Ascending/Nearest), then Priority (Descending)
-                comparator = Comparator
-                    .comparing(Task::getDueDate)
-                    .thenComparing(Task::getPriority, Comparator.reverseOrder())
-                    .thenComparing(Task::getCreationTimestamp);
-                break;
-
-            case "Due Date (Farthest)":
-                // Sort by Due Date (Descending/Farthest), then Priority (Descending)
-                comparator = Comparator
-                    .comparing(Task::getDueDate, Comparator.reverseOrder())
-                    .thenComparing(Task::getPriority, Comparator.reverseOrder())
-                    .thenComparing(Task::getCreationTimestamp);
-                break;
-
-            case "Priority (High to Low)":
-                // Sort by Priority (Descending/High), then Due Date (Ascending)
-                comparator = Comparator
-                    .comparing(Task::getPriority, Comparator.reverseOrder())
-                    .thenComparing(Task::getDueDate)
-                    .thenComparing(Task::getCreationTimestamp);
-                break;
-
-            case "Priority (Low to High)":
-                // Sort by Priority (Ascending/Low), then Due Date (Ascending)
-                comparator = Comparator
-                    .comparing(Task::getPriority)
-                    .thenComparing(Task::getDueDate)
-                    .thenComparing(Task::getCreationTimestamp);
-                break;
-
-            case "Creation Date (Newest)":
-            default:
-                // Default sort by Creation Timestamp (Newest first)
-                comparator = Comparator.comparing(Task::getCreationTimestamp, Comparator.reverseOrder());
-                break;
-        }
-
-        // Apply the sort
+        // Apply Sorting
+        Comparator<Task> comparator = getTaskComparator();
         filteredTasks.sort(comparator);
 
-        // 4. Update the JList Model
+        // Update the JList model
         listModel.clear();
-        filteredTasks.forEach(listModel::addElement);
-
-        // Ensure an item is always selected if the list is not empty
-        if (!listModel.isEmpty() && taskJList.getSelectedIndex() == -1) {
-            taskJList.setSelectedIndex(0);
+        for (Task task : filteredTasks) {
+            listModel.addElement(task);
         }
     }
 
-    // =========================================================================
-    // VI. PERSISTENCE
-    // =========================================================================
+    private boolean matchesSearch(Task task) {
+        String query = searchField.getText().trim().toLowerCase();
+        if (query.isEmpty()) {
+            return true;
+        }
+        // Search in Display Name and Detail Description
+        return task.getDisplayName().toLowerCase().contains(query) || 
+               task.getDetailDescription().toLowerCase().contains(query);
+    }
+
+    private boolean matchesStatusFilter(Task task) {
+        String selectedStatus = (String) filterStatusComboBox.getSelectedItem();
+        if ("All Statuses".equals(selectedStatus)) {
+            return true;
+        }
+        if ("Completed".equals(selectedStatus)) {
+            return task.isCompleted();
+        }
+        if ("Incomplete".equals(selectedStatus)) {
+            return !task.isCompleted();
+        }
+        return true;
+    }
+
+    private Comparator<Task> getTaskComparator() {
+        String sortOption = (String) sortComboBox.getSelectedItem();
+
+        switch (sortOption) {
+            case "Due Date (Upcoming)":
+                // Incomplete tasks come before completed tasks; then sort by due date (earliest first)
+                return Comparator
+                    .comparing(Task::isCompleted)
+                    .thenComparing(Task::getDueDate);
+            case "Due Date (Farthest)":
+                // Incomplete tasks come before completed tasks; then sort by due date (latest first)
+                 return Comparator
+                    .comparing(Task::isCompleted)
+                    .thenComparing(Task::getDueDate, Comparator.reverseOrder());
+            case "Priority (High to Low)":
+                // Incomplete tasks come before completed tasks; then sort by priority (High=3 first)
+                return Comparator
+                    .comparing(Task::isCompleted)
+                    .thenComparing(Task::getPriority, Comparator.reverseOrder());
+            case "Priority (Low to High)":
+                // Incomplete tasks come before completed tasks; then sort by priority (Low=1 first)
+                return Comparator
+                    .comparing(Task::isCompleted)
+                    .thenComparing(Task::getPriority);
+            case "Creation Date (Newest)":
+            default:
+                // Default: Newest first (highest timestamp)
+                return Comparator
+                    .comparing(Task::getCreationTimestamp, Comparator.reverseOrder());
+        }
+    }
 
     @SuppressWarnings("unchecked")
     private void loadTasks() {
-        File file = new File(FILE_NAME);
-        if (file.exists()) {
-            try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(file))) {
-                allTasks = (List<Task>) ois.readObject();
-            } catch (FileNotFoundException e) {
-                allTasks = new ArrayList<>();
-            } catch (IOException | ClassNotFoundException e) {
-                System.err.println("Error loading tasks: " + e.getMessage());
-                JOptionPane.showMessageDialog(this, "Error loading existing tasks.", "Load Error", JOptionPane.ERROR_MESSAGE);
-                allTasks = new ArrayList<>();
-            }
-        } else {
-             allTasks = new ArrayList<>();
+        try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(FILE_NAME))) {
+            allTasks = (List<Task>) ois.readObject();
+        } catch (FileNotFoundException e) {
+            // No file found, starting fresh
+            allTasks = new ArrayList<>();
+        } catch (IOException | ClassNotFoundException e) {
+            System.err.println("Error loading tasks: " + e.getMessage());
+            e.printStackTrace();
+            allTasks = new ArrayList<>(); // Fallback to an empty list
         }
     }
 
@@ -816,12 +826,12 @@ public class ModestToDoListApp extends JFrame {
             oos.writeObject(allTasks);
         } catch (IOException e) {
             System.err.println("Error saving tasks: " + e.getMessage());
-            JOptionPane.showMessageDialog(this, "Error saving tasks.", "Save Error", JOptionPane.ERROR_MESSAGE);
+            e.printStackTrace();
         }
     }
 
     // =========================================================================
-    // VII. MAIN METHOD
+    // VI. MAIN METHOD
     // =========================================================================
 
     public static void main(String[] args) {
